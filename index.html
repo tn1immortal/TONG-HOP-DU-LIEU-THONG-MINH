@@ -30,6 +30,7 @@
         
         /* Hiệu ứng khi kéo thả */
         .droppable-hover { border: 2px dashed #2563eb !important; background-color: #eff6ff; }
+        .item-droppable-hover { border-top: 2px solid #2563eb; }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 font-sans">
@@ -566,6 +567,7 @@
                 
                 try {
                     const { sourceGroupId, itemId } = JSON.parse(data);
+                    // Nếu thả vào cùng group container mà không trúng item, mặc định là thêm vào cuối
                     if (sourceGroupId === targetGroupId) return; 
 
                     const newKB = [...knowledgeBase];
@@ -592,6 +594,56 @@
 
                 } catch (err) {
                     console.error("Drop error", err);
+                }
+            };
+
+            // --- XỬ LÝ THẢ VÀO ITEM (SẮP XẾP) ---
+            const handleItemDrop = (e, targetGroupId, targetItemId) => {
+                e.preventDefault();
+                e.stopPropagation(); // Ngăn sự kiện nổi lên group
+                const data = e.dataTransfer.getData("application/json");
+                if (!data) return;
+
+                try {
+                    const { sourceGroupId, itemId } = JSON.parse(data);
+                    
+                    const newKB = [...knowledgeBase];
+                    
+                    // Tìm nguồn
+                    const sourceGroupIndex = newKB.findIndex(g => g.id === sourceGroupId);
+                    if (sourceGroupIndex === -1) return;
+                    
+                    const sourceItemIndex = newKB[sourceGroupIndex].items.findIndex(i => i.id === itemId);
+                    if (sourceItemIndex === -1) return;
+                    
+                    // Lấy item ra
+                    const [movedItem] = newKB[sourceGroupIndex].items.splice(sourceItemIndex, 1);
+                    
+                    // Tìm đích
+                    const targetGroupIndex = newKB.findIndex(g => g.id === targetGroupId);
+                    if (targetGroupIndex === -1) return;
+                    
+                    // Nếu cùng group, ta phải tìm lại index đích vì mảng đã bị thay đổi sau khi splice
+                    let targetItemIndex = newKB[targetGroupIndex].items.findIndex(i => i.id === targetItemId);
+                    
+                    // Chèn vào vị trí mới (mặc định chèn trước item đích)
+                    if (targetItemIndex !== -1) {
+                        newKB[targetGroupIndex].items.splice(targetItemIndex, 0, movedItem);
+                    } else {
+                        newKB[targetGroupIndex].items.push(movedItem);
+                    }
+                    
+                    // Xóa nhóm nguồn nếu rỗng (và khác nhóm đích)
+                    if (sourceGroupId !== targetGroupId && newKB[sourceGroupIndex].items.length === 0) {
+                        newKB.splice(sourceGroupIndex, 1);
+                    }
+
+                    newKB[targetGroupIndex].lastUpdated = new Date().toISOString();
+                    setKnowledgeBase(newKB);
+                    addLog(sourceGroupId === targetGroupId ? "Đã thay đổi thứ tự." : "Đã chuyển và chèn mục.");
+                    
+                } catch (err) {
+                    console.error("Item Drop error", err);
                 }
             };
 
@@ -768,9 +820,11 @@
                                                                     {group.items.map((item) => (
                                                                         <li 
                                                                             key={item.id} 
-                                                                            className="pl-2 group/item relative pr-8 flex items-start hover:bg-gray-50 rounded"
+                                                                            className="pl-2 group/item relative pr-8 flex items-start hover:bg-gray-50 rounded transition-colors"
                                                                             draggable
                                                                             onDragStart={(e) => handleDragStart(e, group.id, item.id)}
+                                                                            onDragOver={(e) => e.preventDefault()}
+                                                                            onDrop={(e) => handleItemDrop(e, group.id, item.id)}
                                                                         >
                                                                              <span className="opacity-0 group-hover/item:opacity-50 cursor-move mr-2 mt-1" title="Kéo để di chuyển"><GripVertical className="w-4 h-4 text-gray-400"/></span>
                                                                              <div className="flex-1">
@@ -827,6 +881,8 @@
                                                                         className="text-sm text-gray-600 pl-2 border-l-2 border-transparent hover:border-blue-300 transition-colors group/cardItem flex justify-between cursor-move"
                                                                         draggable
                                                                         onDragStart={(e) => handleDragStart(e, group.id, item.id)}
+                                                                        onDragOver={(e) => e.preventDefault()}
+                                                                        onDrop={(e) => handleItemDrop(e, group.id, item.id)}
                                                                     >
                                                                         <span>{toSentenceCase(item.content)} {item.isInferred && <span className="text-xs text-blue-400 ml-2">*</span>}</span>
                                                                         <div className="opacity-0 group-hover/cardItem:opacity-100 flex gap-1">
