@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Tổng Hợp & OCR Đa Năng (Tab Mode + Manual Insert)</title>
+    <title>AI Tổng Hợp & OCR Đa Năng (Full Manual Control)</title>
     
     <!-- 1. Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -945,6 +945,15 @@
                                         <button onClick={() => setDisplayStyle('card')} className={`p-1.5 rounded-md transition ${displayStyle === 'card' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`} title="Chế độ thẻ"><GridIcon className="w-4 h-4" /></button>
                                         <button onClick={() => setDisplayStyle('tab')} className={`p-1.5 rounded-md transition ${displayStyle === 'tab' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`} title="Chế độ Tab"><Layout className="w-4 h-4" /></button>
                                     </div>
+                                )}
+                                {viewMode === 'dashboard' && (
+                                    <button 
+                                        onClick={createNewGroup}
+                                        className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 px-3 py-2 rounded-md text-sm transition shadow-sm mr-2"
+                                        title="Tạo nhóm/chủ đề mới"
+                                    >
+                                        <PlusCircle className="w-4 h-4" /> <span className="hidden md:inline">Thêm Nhóm</span>
+                                    </button>
                                 )}
                                 {knowledgeBase.length > 0 && (
                                     <button 
