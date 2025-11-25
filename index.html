@@ -1,0 +1,590 @@
+import React, { useState, useEffect } from 'react';
+import { Upload, RefreshCw, Search, FileText, Download, Sparkles, BrainCircuit, List, Grid, BookOpen, FileType, AlertTriangle, CheckCircle } from 'lucide-react';
+
+// --- CẤU HÌNH THƯ VIỆN BÊN NGOÀI (CDN) ---
+const LIBS = {
+    PDF: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js",
+    PDF_WORKER: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js",
+    EXCEL: "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",
+    WORD: "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"
+};
+
+// --- TIỆN ÍCH XỬ LÝ NGÔN NGỮ (NLP) ---
+const removeVietnameseTones = (str) => {
+    str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a");
+    str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e");
+    str = str.replace(/ì|í|ị|ỉ|ĩ/g, "i");
+    str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, "o");
+    str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, "u");
+    str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g, "y");
+    str = str.replace(/đ/g, "d");
+    str = str.replace(/À|Á|Ạ|Ả|Ã|Â|Ầ|Ấ|Ậ|Ẩ|Ẫ|Ă|Ằ|Ắ|Ặ|Ẳ|Ẵ/g, "A");
+    str = str.replace(/È|É|Ẹ|Ẻ|Ẽ|Ê|Ề|Ế|Ệ|Ể|Ễ/g, "E");
+    str = str.replace(/Ì|Í|Ị|Ỉ|Ĩ/g, "I");
+    str = str.replace(/Ò|Ó|Ọ|Ỏ|Õ|Ô|Ồ|Ố|Ộ|Ổ|Ỗ|Ơ|Ờ|Ớ|Ợ|Ở|Ỡ/g, "O");
+    str = str.replace(/Ù|Ú|Ụ|Ủ|Ũ|Ư|Ừ|Ứ|Ự|Ử|Ữ/g, "U");
+    str = str.replace(/Ỳ|Ý|Ỵ|Ỷ|Ỹ/g, "Y");
+    str = str.replace(/Đ/g, "D");
+    str = str.replace(/\u0300|\u0301|\u0303|\u0309|\u0323/g, ""); 
+    return str;
+}
+
+const toSentenceCase = (str) => {
+    if (!str) return '';
+    const s = str.toString().toLowerCase();
+    return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+const cleanFileName = (fileName) => {
+    if (!fileName) return "";
+    let name = fileName.replace(/\.[^/.]+$/, "");
+    name = name.replace(/[_-]/g, " ");
+    name = name.replace(/\s+/g, " ").trim();
+    return toSentenceCase(name);
+}
+
+const getBigrams = (str) => {
+    const s = str.toLowerCase();
+    const v = new Array(Math.max(0, s.length - 1));
+    for (let i = 0; i < v.length; i++) v[i] = s.slice(i, i + 2);
+    return v;
+}
+
+const calculateFuzzySimilarity = (str1, str2) => {
+    if (!str1 || !str2) return 0;
+    const s1 = removeVietnameseTones(str1).toLowerCase().replace(/\s+/g, '');
+    const s2 = removeVietnameseTones(str2).toLowerCase().replace(/\s+/g, '');
+    if (s1 === s2) return 1;
+    if (s1.length < 2 || s2.length < 2) return 0;
+    const bigrams1 = getBigrams(s1);
+    const bigrams2 = getBigrams(s2);
+    const sysBigrams = new Set(bigrams1);
+    let intersection = 0;
+    for (let i = 0; i < bigrams2.length; i++) {
+        if (sysBigrams.has(bigrams2[i])) intersection++;
+    }
+    return (2.0 * intersection) / (bigrams1.length + bigrams2.length);
+};
+
+const hasVietnameseAccents = (str) => {
+    return /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/.test(str);
+}
+
+const generateId = () => Math.random().toString(36).substr(2, 9);
+
+const updateDictionary = (text, dictionary) => {
+    if (!text || !hasVietnameseAccents(text)) return;
+    const words = text.split(/[\s,.;:!?()"]+/);
+    words.forEach(word => {
+        if (word.length > 1 && hasVietnameseAccents(word)) {
+            const key = removeVietnameseTones(word).toLowerCase();
+            if (!dictionary[key]) dictionary[key] = word;
+            else if (word[0] === word[0].toUpperCase() && dictionary[key][0] !== dictionary[key][0].toUpperCase()) dictionary[key] = word;
+        }
+    });
+};
+
+const restoreAccents = (text, dictionary) => {
+    if (!text) return '';
+    const parts = text.split(/([\s,.;:!?()"]+)/);
+    return parts.map(part => {
+        const key = removeVietnameseTones(part).toLowerCase();
+        return dictionary[key] || part;
+    }).join('');
+};
+
+const App = () => {
+    const [knowledgeBase, setKnowledgeBase] = useState([]);
+    const [accentDictionary, setAccentDictionary] = useState({});
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [logs, setLogs] = useState([]);
+    const [viewMode, setViewMode] = useState('dashboard');
+    const [displayStyle, setDisplayStyle] = useState('document');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [libsLoaded, setLibsLoaded] = useState(false);
+
+    // --- TỰ ĐỘNG TẢI THƯ VIỆN ---
+    useEffect(() => {
+        const loadScript = (src) => {
+            return new Promise((resolve, reject) => {
+                if (document.querySelector(`script[src="${src}"]`)) {
+                    resolve();
+                    return;
+                }
+                const script = document.createElement('script');
+                script.src = src;
+                script.onload = resolve;
+                script.onerror = reject;
+                document.body.appendChild(script);
+            });
+        };
+
+        const loadAllLibs = async () => {
+            try {
+                await Promise.all([
+                    loadScript(LIBS.PDF),
+                    loadScript(LIBS.EXCEL),
+                    loadScript(LIBS.WORD)
+                ]);
+                setLibsLoaded(true);
+                addLog("Đã tải xong các bộ đọc file (PDF, Excel, Word).");
+            } catch (err) {
+                console.error("Lỗi tải thư viện", err);
+                addLog("Lỗi: Không thể tải bộ đọc file. Kiểm tra kết nối mạng.");
+            }
+        };
+
+        loadAllLibs();
+
+        const savedData = localStorage.getItem('vn_smart_knowledge_base');
+        const savedDict = localStorage.getItem('vn_accent_dictionary');
+        if (savedData) setKnowledgeBase(JSON.parse(savedData));
+        if (savedDict) setAccentDictionary(JSON.parse(savedDict));
+    }, []);
+
+    useEffect(() => {
+        localStorage.setItem('vn_smart_knowledge_base', JSON.stringify(knowledgeBase));
+        localStorage.setItem('vn_accent_dictionary', JSON.stringify(accentDictionary));
+    }, [knowledgeBase, accentDictionary]);
+
+    const addLog = (message) => {
+        setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${message}`, ...prev.slice(0, 49)]);
+    };
+
+    // --- BỘ ĐỌC FILE CHUYÊN DỤNG ---
+    const readPdfFile = async (file) => {
+        if (!window.pdfjsLib) throw new Error("Thư viện PDF chưa tải xong.");
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = LIBS.PDF_WORKER;
+        
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let fullText = "";
+        
+        for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items.map(item => item.str).join(" ");
+            fullText += pageText + "\n";
+        }
+        return fullText;
+    };
+
+    const readWordFile = async (file) => {
+        if (!window.mammoth) throw new Error("Thư viện Word chưa tải xong.");
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await window.mammoth.extractRawText({ arrayBuffer });
+        return result.value;
+    };
+
+    const readExcelFile = async (file) => {
+        if (!window.XLSX) throw new Error("Thư viện Excel chưa tải xong.");
+        const arrayBuffer = await file.arrayBuffer();
+        const workbook = window.XLSX.read(arrayBuffer, { type: 'array' });
+        let fullText = "";
+        workbook.SheetNames.forEach(sheetName => {
+            const worksheet = workbook.Sheets[sheetName];
+            const jsonData = window.XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            fullText += jsonData.map(row => row.join(" ")).join("\n") + "\n";
+        });
+        return fullText;
+    };
+
+    const handleFileUpload = async (event) => {
+        const files = Array.from(event.target.files);
+        if (files.length === 0) return;
+
+        setIsProcessing(true);
+        addLog(`Đang xử lý ${files.length} file đa định dạng...`);
+
+        let allLines = [];
+
+        for (const file of files) {
+            try {
+                let text = "";
+                const ext = file.name.split('.').pop().toLowerCase();
+                addLog(`-> Đang đọc: ${file.name} (${ext})`);
+
+                if (ext === 'pdf') {
+                    text = await readPdfFile(file);
+                } else if (['docx'].includes(ext)) {
+                    text = await readWordFile(file);
+                } else if (['xlsx', 'xls', 'csv'].includes(ext)) {
+                    text = await readExcelFile(file);
+                } else if (['html', 'xml', 'htm', 'mhtml', 'mht'].includes(ext)) {
+                    text = await new Promise(r => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => r(e.target.result); 
+                        reader.readAsText(file);
+                    });
+                    // Strip HTML tags for cleaner text
+                    text = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+                } else {
+                    // Mặc định đọc text cho .txt, .json, .md, .log...
+                    text = await new Promise(r => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => r(e.target.result);
+                        reader.readAsText(file);
+                    });
+                }
+
+                // Xử lý JSON nếu cần
+                if (ext === 'json') {
+                    try {
+                        const j = JSON.parse(text);
+                        text = JSON.stringify(j, null, 2).replace(/[{}[\],"]/g, ''); 
+                    } catch(e) {}
+                }
+
+                const lines = text.split(/\r?\n/).filter(line => line.trim().length > 3);
+                lines.forEach(line => allLines.push({ content: line.trim(), source: file.name }));
+
+            } catch (err) {
+                console.error(err);
+                addLog(`⚠️ Lỗi đọc ${file.name}: ${err.message}. File này có thể bị lỗi hoặc định dạng quá cũ.`);
+            }
+        }
+
+        // Logic học và phân loại (như cũ)
+        allLines.sort((a, b) => {
+            const aHas = hasVietnameseAccents(a.content);
+            const bHas = hasVietnameseAccents(b.content);
+            if (aHas && !bHas) return -1; 
+            if (!aHas && bHas) return 1;  
+            return 0;
+        });
+
+        let currentKB = [...knowledgeBase];
+        let currentDict = { ...accentDictionary };
+        
+        knowledgeBase.forEach(group => {
+            if (hasVietnameseAccents(group.topic)) updateDictionary(group.topic, currentDict);
+            group.items.forEach(item => {
+                if (!item.isInferred) updateDictionary(item.content, currentDict);
+            });
+        });
+
+        let processedData = processBatchLogic(allLines, currentKB, currentDict);
+        setAccentDictionary(processedData.dictionary);
+        setKnowledgeBase(processedData.kb);
+        
+        setIsProcessing(false);
+        addLog(`✅ Hoàn tất. Đã xử lý xong.`);
+        setViewMode('dashboard');
+    };
+
+    const processBatchLogic = (lines, currentKB, currentDict) => {
+        let newKB = JSON.parse(JSON.stringify(currentKB));
+        
+        for (const lineObj of lines) {
+            const rawContent = lineObj.content;
+            const fileTopic = cleanFileName(lineObj.source); 
+            
+            const hasAccent = hasVietnameseAccents(rawContent);
+            if (hasAccent) {
+                updateDictionary(rawContent, currentDict);
+                updateDictionary(fileTopic, currentDict);
+            }
+
+            let processedContent = rawContent;
+            let wasRestored = false;
+
+            if (!hasAccent) {
+                const restored = restoreAccents(rawContent, currentDict);
+                if (restored !== rawContent) {
+                    processedContent = restored;
+                    wasRestored = true;
+                }
+            }
+
+            let bestMatchGroupIndex = -1;
+            let bestMatchScore = 0;
+            const SIMILARITY_THRESHOLD = 0.55; 
+
+            newKB.forEach((group, index) => {
+                const filenameScore = calculateFuzzySimilarity(fileTopic, group.topic);
+                const topicScore = calculateFuzzySimilarity(processedContent, group.topic);
+                let itemMaxScore = 0;
+                group.items.slice(0, 20).forEach(item => {
+                    const score = calculateFuzzySimilarity(processedContent, item.content);
+                    if (score > itemMaxScore) itemMaxScore = score;
+                });
+                
+                const finalScore = Math.max(topicScore, itemMaxScore, filenameScore * 1.5); 
+
+                if (finalScore > bestMatchScore) {
+                    bestMatchScore = finalScore;
+                    bestMatchGroupIndex = index;
+                }
+            });
+
+            const newItem = {
+                id: generateId(),
+                content: processedContent,
+                originalContent: rawContent,
+                normalized: removeVietnameseTones(processedContent),
+                source: lineObj.source,
+                date: new Date().toISOString(),
+                isInferred: !hasAccent || wasRestored, 
+                confidenceScore: bestMatchScore > 1 ? 1 : bestMatchScore.toFixed(2)
+            };
+
+            if (bestMatchScore > SIMILARITY_THRESHOLD && bestMatchGroupIndex !== -1) {
+                const targetGroup = newKB[bestMatchGroupIndex];
+                const isDuplicate = targetGroup.items.some(i => i.content === processedContent);
+                
+                if (!isDuplicate) {
+                    targetGroup.items.push(newItem);
+                    targetGroup.lastUpdated = new Date().toISOString();
+                    
+                    const currentTopicHasAccent = hasVietnameseAccents(targetGroup.topic);
+                    if (!currentTopicHasAccent && hasVietnameseAccents(fileTopic) && calculateFuzzySimilarity(fileTopic, targetGroup.topic) > 0.8) {
+                         targetGroup.topic = fileTopic;
+                    } 
+                    else if (!currentTopicHasAccent && hasVietnameseAccents(processedContent) && processedContent.length < 100) {
+                         targetGroup.topic = processedContent.length > 80 ? processedContent.substring(0, 80) + "..." : processedContent;
+                    }
+                }
+            } else {
+                let newTopicName = fileTopic;
+                if (!newTopicName || newTopicName.length < 2) {
+                     newTopicName = processedContent.length > 80 ? processedContent.substring(0, 80) + "..." : processedContent;
+                }
+                if (!hasVietnameseAccents(newTopicName)) {
+                    const restoredTopic = restoreAccents(newTopicName, currentDict);
+                    if (restoredTopic !== newTopicName) newTopicName = restoredTopic;
+                }
+
+                newKB.push({
+                    id: generateId(),
+                    topic: newTopicName, 
+                    created: new Date().toISOString(),
+                    lastUpdated: new Date().toISOString(),
+                    items: [newItem]
+                });
+            }
+        }
+        newKB.sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated));
+        return { kb: newKB, dictionary: currentDict };
+    };
+
+    const handleClearData = () => {
+        if(confirm("Xóa toàn bộ dữ liệu?")) {
+            setKnowledgeBase([]);
+            setAccentDictionary({});
+            localStorage.removeItem('vn_smart_knowledge_base');
+            localStorage.removeItem('vn_accent_dictionary');
+            addLog("Hệ thống đã reset.");
+        }
+    };
+
+    const handleExportReport = () => {
+        let reportContent = "BÁO CÁO TỔNG HỢP\n";
+        reportContent += `Ngày xuất: ${new Date().toLocaleString('vi-VN')}\n`;
+        reportContent += "=============================================\n\n";
+
+        knowledgeBase.forEach((group, index) => {
+            reportContent += `${index + 1}. ${toSentenceCase(group.topic)}\n`;
+            group.items.forEach(item => {
+                const mark = item.isInferred ? "[*]" : "";
+                reportContent += `   - ${toSentenceCase(item.content)} ${mark}\n`;
+            });
+            reportContent += "\n";
+        });
+
+        const element = document.createElement("a");
+        const file = new Blob([reportContent], {type: 'text/plain'});
+        element.href = URL.createObjectURL(file);
+        element.download = `Bao_Cao_${new Date().toISOString().slice(0,10)}.txt`;
+        document.body.appendChild(element);
+        element.click();
+    };
+
+    const filteredKB = knowledgeBase.filter(group => {
+        if (!searchTerm) return true;
+        const normSearch = removeVietnameseTones(searchTerm).toLowerCase();
+        return removeVietnameseTones(group.topic).toLowerCase().includes(normSearch) || 
+               group.items.some(item => item.normalized.toLowerCase().includes(normSearch));
+    });
+
+    return (
+        <div className="flex h-screen bg-gray-100 text-gray-800 font-sans">
+            <div className="w-64 bg-white border-r border-gray-200 flex flex-col hidden md:flex shadow-sm z-20">
+                <div className="p-6 border-b border-gray-100">
+                    <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                        <BrainCircuit className="w-7 h-7 text-blue-600" />
+                        AI Super Reader
+                    </h1>
+                    <p className="text-xs text-gray-500 mt-1">Hỗ trợ: PDF, Word, Excel...</p>
+                </div>
+                
+                <nav className="flex-1 p-4 space-y-2">
+                    <button onClick={() => setViewMode('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${viewMode === 'dashboard' ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-100'}`}>
+                        <FileText className="w-5 h-5" /> Xem Báo Cáo
+                    </button>
+                    <button onClick={() => setViewMode('upload')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${viewMode === 'upload' ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-600 hover:bg-gray-100'}`}>
+                        <Upload className="w-5 h-5" /> Nạp Dữ Liệu
+                    </button>
+                </nav>
+
+                <div className="p-4 border-t border-gray-100 text-xs text-gray-500">
+                    <div className="flex items-center gap-1 mb-1">
+                        {libsLoaded ? <CheckCircle className="w-3 h-3 text-green-500" /> : <RefreshCw className="w-3 h-3 animate-spin text-orange-500" />}
+                        Trạng thái: {libsLoaded ? "Sẵn sàng" : "Đang tải bộ đọc..."}
+                    </div>
+                    <div className="flex items-center gap-1 mb-1">
+                        <BookOpen className="w-3 h-3" /> Từ điển: <span className="font-bold text-gray-800">{Object.keys(accentDictionary).length}</span> từ
+                    </div>
+                </div>
+            </div>
+
+            <div className="flex-1 flex flex-col overflow-hidden">
+                <header className="bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-between shadow-sm z-10">
+                    <h2 className="text-lg font-semibold text-gray-800">
+                        {viewMode === 'dashboard' ? 'Văn Bản Tổng Hợp' : 'Nạp dữ liệu'}
+                    </h2>
+                    <div className="flex items-center gap-3">
+                         {viewMode === 'dashboard' && (
+                             <div className="flex bg-gray-100 rounded-lg p-1 mr-2">
+                                 <button onClick={() => setDisplayStyle('document')} className={`p-1.5 rounded-md transition ${displayStyle === 'document' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`} title="Chế độ văn bản"><List className="w-4 h-4" /></button>
+                                 <button onClick={() => setDisplayStyle('card')} className={`p-1.5 rounded-md transition ${displayStyle === 'card' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`} title="Chế độ thẻ"><Grid className="w-4 h-4" /></button>
+                             </div>
+                         )}
+                         {knowledgeBase.length > 0 && (
+                            <button onClick={handleExportReport} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-md text-sm transition shadow-sm">
+                                <Download className="w-4 h-4" /> Tải File .txt
+                            </button>
+                         )}
+                         <button onClick={handleClearData} className="text-red-500 hover:bg-red-50 px-3 py-1 rounded text-sm transition">Xóa</button>
+                    </div>
+                </header>
+
+                <main className="flex-1 overflow-auto p-8 relative bg-gray-100">
+                    {viewMode === 'upload' && (
+                        <div className="max-w-2xl mx-auto mt-8">
+                            <div className="bg-white p-10 rounded-xl shadow-lg border border-gray-200 text-center">
+                                <div className="mb-6 flex justify-center">
+                                    <div className="p-4 bg-blue-50 rounded-full">
+                                        <FileType className="w-10 h-10 text-blue-600" />
+                                    </div>
+                                </div>
+                                <h3 className="text-xl font-bold text-gray-800 mb-2">Đọc Mọi Định Dạng File</h3>
+                                <p className="text-gray-500 mb-8 px-8 text-sm">
+                                    Chấp nhận: <b>PDF, Word (.docx), Excel (.xlsx), MHTML, TXT...</b><br/>
+                                    {libsLoaded ? <span className="text-green-600 font-bold">Hệ thống đã sẵn sàng xử lý file phức tạp.</span> : <span className="text-orange-500">Đang tải thư viện xử lý, vui lòng đợi giây lát...</span>}
+                                </p>
+                                
+                                <label className={`inline-block relative ${!libsLoaded ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                                    <input 
+                                        type="file" 
+                                        multiple 
+                                        onChange={handleFileUpload} 
+                                        className="hidden" 
+                                        disabled={isProcessing || !libsLoaded} 
+                                        accept=".txt,.md,.csv,.json,.xml,.html,.htm,.js,.css,.srt,.vtt,.pdf,.docx,.xlsx,.xls,.mhtml,.mht"
+                                    />
+                                    <span className={`flex items-center gap-2 cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium shadow transition`}>
+                                        {isProcessing ? <RefreshCw className="animate-spin w-5 h-5"/> : <Upload className="w-5 h-5" />}
+                                        {isProcessing ? 'Đang phân tích...' : 'Chọn Files'}
+                                    </span>
+                                </label>
+                                {!libsLoaded && <p className="text-xs text-gray-400 mt-2">Cần kết nối mạng để tải bộ đọc PDF/Office.</p>}
+                            </div>
+                            <div className="mt-6 bg-slate-800 text-green-400 p-4 rounded-lg font-mono text-xs h-48 overflow-y-auto shadow-inner">
+                                {logs.map((log, idx) => <div key={idx} className="mb-1">{log}</div>)}
+                            </div>
+                        </div>
+                    )}
+
+                    {viewMode === 'dashboard' && (
+                        <div className="max-w-4xl mx-auto">
+                            <div className="mb-6 sticky top-0 z-10">
+                                <div className="relative shadow-sm">
+                                    <Search className="absolute left-4 top-3.5 text-gray-400 w-5 h-5" />
+                                    <input 
+                                        type="text" 
+                                        placeholder="Tìm kiếm nội dung..."
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        className="w-full pl-12 pr-4 py-3 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition shadow-sm"
+                                    />
+                                </div>
+                            </div>
+
+                            {filteredKB.length === 0 ? (
+                                <div className="text-center py-20 opacity-50">
+                                    <FileText className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                                    <p className="text-gray-500">Chưa có dữ liệu báo cáo.</p>
+                                </div>
+                            ) : (
+                                <>
+                                    {displayStyle === 'document' ? (
+                                        <div className="bg-white shadow-md rounded-none md:rounded-lg min-h-[500px] p-10 md:p-16 border border-gray-200 print:shadow-none print:border-none">
+                                            <div className="text-center mb-10 border-b border-gray-100 pb-6">
+                                                <h1 className="text-2xl font-bold text-slate-800 uppercase mb-2">Báo Cáo Tổng Hợp</h1>
+                                                <p className="text-sm text-gray-500 italic">Ngày xuất: {new Date().toLocaleDateString('vi-VN')}</p>
+                                            </div>
+                                            
+                                            <div className="space-y-8 font-serif md:font-sans text-slate-800">
+                                                {filteredKB.map((group, idx) => (
+                                                    <div key={group.id}>
+                                                        <h3 className="text-lg font-bold text-slate-900 mb-3 tracking-wide">
+                                                            {idx + 1}. {toSentenceCase(group.topic)}
+                                                        </h3>
+                                                        <ul className="list-disc pl-6 space-y-2 text-base leading-relaxed text-slate-700">
+                                                            {group.items.map((item) => (
+                                                                <li key={item.id} className="pl-2">
+                                                                    <span className={item.isInferred ? "text-blue-900" : ""}>
+                                                                        {toSentenceCase(item.content)}
+                                                                    </span>
+                                                                    {item.isInferred && (
+                                                                        <span className="text-[10px] text-blue-400 ml-2 select-none" title="Đã được AI phục hồi dấu">
+                                                                            (đã phục hồi dấu)
+                                                                        </span>
+                                                                    )}
+                                                                    <span className="text-[10px] text-gray-400 ml-2 select-none">
+                                                                        - {item.source}
+                                                                    </span>
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            
+                                            <div className="mt-16 pt-8 border-t border-gray-100 text-center text-xs text-gray-400">
+                                                — Hết báo cáo —
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="grid gap-4">
+                                            {filteredKB.map((group, idx) => (
+                                                <div key={group.id} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                                                    <div className="bg-gray-50 px-4 py-3 border-b border-gray-100 flex justify-between items-center">
+                                                        <h3 className="font-bold text-slate-700">
+                                                            {idx + 1}. {toSentenceCase(group.topic)}
+                                                        </h3>
+                                                        <span className="text-xs bg-white border border-gray-200 px-2 py-1 rounded text-gray-500">{group.items.length} tin</span>
+                                                    </div>
+                                                    <div className="p-4 space-y-2">
+                                                        {group.items.map((item) => (
+                                                            <div key={item.id} className="text-sm text-gray-600 pl-2 border-l-2 border-transparent hover:border-blue-300 transition-colors">
+                                                                {toSentenceCase(item.content)}
+                                                                {item.isInferred && <span className="text-xs text-blue-400 ml-2">*</span>}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    )}
+                </main>
+            </div>
+        </div>
+    );
+};
+
+export default App;
