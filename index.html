@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Tổng Hợp & OCR Đa Năng (Drag & Drop Support)</title>
+    <title>AI Tổng Hợp & OCR Đa Năng (Undo & Delete Group)</title>
     
     <!-- 1. Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -70,6 +70,7 @@
         const Target = ({ className }) => <IconWrapper className={className}><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></IconWrapper>;
         const Tag = ({ className }) => <IconWrapper className={className}><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/></IconWrapper>;
         const PlusCircle = ({ className }) => <IconWrapper className={className}><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="16"/><line x1="8" x2="16" y1="12" y2="12"/></IconWrapper>;
+        const RotateCcw = ({ className }) => <IconWrapper className={className}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 12"/><path d="M3 3v9h9"/></IconWrapper>;
 
         // --- CẤU HÌNH CDN ---
         const LIBS = {
@@ -204,7 +205,7 @@
             const [searchTerm, setSearchTerm] = useState('');
             const [libsLoaded, setLibsLoaded] = useState(false);
             const [dragOverGroupId, setDragOverGroupId] = useState(null);
-            const [isDraggingFile, setIsDraggingFile] = useState(false); // New state for file drag
+            const [isDraggingFile, setIsDraggingFile] = useState(false); 
             
             const [manualText, setManualText] = useState("");
             const [editingId, setEditingId] = useState(null); 
@@ -217,6 +218,9 @@
 
             const [activeTabId, setActiveTabId] = useState(null);
             const [targetGroupId, setTargetGroupId] = useState("auto");
+
+            // --- UNDO STATE ---
+            const [history, setHistory] = useState([]);
 
             const fileImportRef = useRef(null);
 
@@ -268,6 +272,29 @@
                 setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${message}`, ...prev.slice(0, 49)]);
             };
 
+            // --- HISTORY MANAGER ---
+            const updateKB = (newState) => {
+                setHistory(prev => {
+                    const newHist = [...prev, knowledgeBase];
+                    // Optional: Limit history size to 50 steps
+                    if (newHist.length > 50) return newHist.slice(newHist.length - 50);
+                    return newHist;
+                });
+                setKnowledgeBase(newState);
+            };
+
+            const handleUndo = () => {
+                if (history.length === 0) {
+                    alert("Không có hành động nào để hoàn tác!");
+                    return;
+                }
+                const previousState = history[history.length - 1];
+                const newHistory = history.slice(0, history.length - 1);
+                setHistory(newHistory);
+                setKnowledgeBase(previousState);
+                addLog("Đã hoàn tác hành động trước đó.");
+            };
+
             const handleExportData = () => {
                 if (knowledgeBase.length === 0) {
                     alert("Chưa có dữ liệu để xuất!");
@@ -309,7 +336,9 @@
                         }
 
                         if (confirm(`Bạn có chắc muốn nạp dữ liệu backup? \nHành động này sẽ thay thế ${knowledgeBase.length} nhóm dữ liệu hiện tại bằng dữ liệu trong file.`)) {
-                            setKnowledgeBase(importedData.knowledgeBase);
+                            // For massive restore, we might not want to push to undo stack to save memory, or treat as one big undoable action.
+                            // Here treating as one undoable action.
+                            updateKB(importedData.knowledgeBase);
                             if (importedData.accentDictionary) {
                                 setAccentDictionary(importedData.accentDictionary);
                             }
@@ -495,7 +524,9 @@
 
                 let processedData = processBatchLogic(allLines, currentKB, currentDict, targetGroupId);
                 setAccentDictionary(processedData.dictionary);
-                setKnowledgeBase(processedData.kb);
+                
+                // Use updateKB instead of setKnowledgeBase for undo
+                updateKB(processedData.kb);
                 
                 setIsProcessing(false);
                 addLog(`✅ Hoàn tất xử lý. Dữ liệu đã được thêm vào: ${targetGroupId === 'auto' ? 'Tự động phân loại' : 'Nhóm đã chọn'}.`);
@@ -619,10 +650,9 @@
 
             const handleClearData = () => {
                 if(confirm("Xóa toàn bộ dữ liệu?")) {
-                    setKnowledgeBase([]);
+                    updateKB([]); // Undoable clear
                     setAccentDictionary({});
-                    localStorage.removeItem('vn_smart_knowledge_base');
-                    localStorage.removeItem('vn_accent_dictionary');
+                    // localStorage clear happens in useEffect but we might want to keep it synced
                     addLog("Hệ thống đã reset.");
                 }
             };
@@ -668,7 +698,7 @@
                     }
                     return group;
                 });
-                setKnowledgeBase(updatedKB);
+                updateKB(updatedKB);
                 cancelAddingItem();
                 addLog("Đã thêm mục mới thủ công.");
             };
@@ -679,7 +709,7 @@
                     if (group.id === groupId) return { ...group, topic: editValue, isManualTopic: true };
                     return group;
                 });
-                setKnowledgeBase(updatedKB);
+                updateKB(updatedKB);
                 cancelEditing();
                 addLog("Đã cập nhật tên nhóm.");
             };
@@ -698,7 +728,7 @@
                     }
                     return group;
                 });
-                setKnowledgeBase(updatedKB);
+                updateKB(updatedKB);
                 cancelEditing();
                 addLog("Đã cập nhật nội dung và tags.");
             };
@@ -712,8 +742,16 @@
                     }
                     return group;
                 }).filter(group => group.items.length > 0); 
-                setKnowledgeBase(updatedKB);
+                updateKB(updatedKB);
                 addLog("Đã xóa mục.");
+            };
+
+            const deleteGroup = (groupId) => {
+                if(!confirm("Bạn có chắc muốn xóa toàn bộ nhóm này và các mục bên trong?")) return;
+                const updatedKB = knowledgeBase.filter(g => g.id !== groupId);
+                updateKB(updatedKB);
+                if (activeTabId === groupId) setActiveTabId(null);
+                addLog("Đã xóa nhóm dữ liệu.");
             };
             
             const createNewGroup = () => {
@@ -727,7 +765,8 @@
                         items: [],
                         isManualTopic: true
                     };
-                    setKnowledgeBase([newGroup, ...knowledgeBase]);
+                    // For creating new group, we assume it's an undoable action
+                    updateKB([newGroup, ...knowledgeBase]);
                     setActiveTabId(newGroup.id);
                     setDisplayStyle('tab'); // Chuyển sang view Tab ngay
                     addLog("Đã tạo Tab báo cáo mới.");
@@ -819,7 +858,7 @@
                         newKB.splice(sourceGroupIndex, 1);
                     }
 
-                    setKnowledgeBase(newKB);
+                    updateKB(newKB);
                     addLog("Đã chuyển mục sang nhóm mới.");
 
                 } catch (err) {
@@ -859,7 +898,7 @@
                     }
 
                     newKB[targetGroupIndex].lastUpdated = new Date().toISOString();
-                    setKnowledgeBase(newKB);
+                    updateKB(newKB);
                     addLog(sourceGroupId === targetGroupId ? "Đã thay đổi thứ tự." : "Đã chuyển và chèn mục.");
                     
                 } catch (err) {
@@ -919,6 +958,10 @@
                             <div className="pt-4 mt-4 border-t border-gray-100">
                                 <p className="px-4 text-xs font-semibold text-gray-400 uppercase mb-2">Quản lý dữ liệu</p>
                                 
+                                <button onClick={handleUndo} className={`w-full flex items-center gap-3 px-4 py-2 text-sm rounded-lg transition-colors ${history.length > 0 ? 'text-blue-700 hover:bg-blue-50' : 'text-gray-400 cursor-not-allowed'}`} disabled={history.length === 0}>
+                                    <RotateCcw className="w-4 h-4" /> Hoàn tác (Undo)
+                                </button>
+
                                 <button onClick={handleExportData} className="w-full flex items-center gap-3 px-4 py-2 text-sm rounded-lg text-green-700 hover:bg-green-50 transition-colors">
                                     <DownloadCloud className="w-4 h-4" /> Backup Dữ liệu
                                 </button>
@@ -1114,7 +1157,7 @@
                                                                         onDragLeave={handleDragLeave}
                                                                         onDrop={(e) => handleDrop(e, group.id)}
                                                                     >
-                                                                        <div className="flex items-center gap-2 mb-3">
+                                                                        <div className="flex items-center gap-2 mb-3 group/header">
                                                                             {editingId === group.id ? (
                                                                                 <div className="flex-1 flex gap-2">
                                                                                     <input type="text" value={editValue} onChange={(e) => setEditValue(e.target.value)} className="flex-1 border border-blue-300 rounded px-2 py-1 text-lg font-bold" autoFocus />
@@ -1127,8 +1170,11 @@
                                                                                         {idx + 1}. <HighlightText text={toSentenceCase(group.topic)} highlight={searchTerm} />
                                                                                         {group.isManualTopic && <Lock className="w-4 h-4 text-orange-400" title="Đã khóa tên nhóm" />}
                                                                                     </h3>
-                                                                                    <button onClick={() => startEditing(group.id, toSentenceCase(group.topic))} className="opacity-0 group-hover/topic:opacity-100 transition text-gray-400 hover:text-blue-500 p-1" title="Sửa tiêu đề"><Edit2 className="w-4 h-4" /></button>
-                                                                                    <button onClick={() => startAddingItem(group.id)} className="opacity-0 group-hover/topic:opacity-100 transition text-green-500 hover:text-green-700 p-1" title="Thêm mục mới"><PlusCircle className="w-4 h-4" /></button>
+                                                                                    <div className="opacity-0 group-hover/header:opacity-100 flex gap-1 transition-opacity">
+                                                                                        <button onClick={() => startEditing(group.id, toSentenceCase(group.topic))} className="text-gray-400 hover:text-blue-500 p-1" title="Sửa tiêu đề"><Edit2 className="w-4 h-4" /></button>
+                                                                                        <button onClick={() => startAddingItem(group.id)} className="text-green-500 hover:text-green-700 p-1" title="Thêm mục mới"><PlusCircle className="w-4 h-4" /></button>
+                                                                                        <button onClick={() => deleteGroup(group.id)} className="text-gray-400 hover:text-red-500 p-1" title="Xóa nhóm"><Trash2 className="w-4 h-4" /></button>
+                                                                                    </div>
                                                                                 </>
                                                                             )}
                                                                         </div>
@@ -1230,8 +1276,11 @@
                                                                         <h3 className="font-bold text-slate-700 flex items-center gap-2">
                                                                             {idx + 1}. <HighlightText text={toSentenceCase(group.topic)} highlight={searchTerm} />
                                                                             {group.isManualTopic && <Lock className="w-3 h-3 text-orange-400"/>}
-                                                                            <button onClick={() => startEditing(group.id, toSentenceCase(group.topic))} className="opacity-0 group-hover/cardHeader:opacity-100 text-gray-400 hover:text-blue-500"><Edit2 className="w-3 h-3"/></button>
-                                                                            <button onClick={() => startAddingItem(group.id)} className="opacity-0 group-hover/cardHeader:opacity-100 text-green-500 hover:text-green-700"><PlusCircle className="w-3 h-3" /></button>
+                                                                            <div className="opacity-0 group-hover/cardHeader:opacity-100 flex gap-1 transition-opacity ml-2">
+                                                                                <button onClick={() => startEditing(group.id, toSentenceCase(group.topic))} className="text-gray-400 hover:text-blue-500"><Edit2 className="w-3 h-3"/></button>
+                                                                                <button onClick={() => startAddingItem(group.id)} className="text-green-500 hover:text-green-700"><PlusCircle className="w-3 h-3" /></button>
+                                                                                <button onClick={() => deleteGroup(group.id)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-3 h-3"/></button>
+                                                                            </div>
                                                                         </h3>
                                                                         <span className="text-xs bg-white border border-gray-200 px-2 py-1 rounded text-gray-500">{group.items.length} tin</span>
                                                                     </div>
@@ -1331,8 +1380,11 @@
                                                                                 ) : (
                                                                                     <>
                                                                                         <HighlightText text={toSentenceCase(activeGroup.topic)} highlight={searchTerm} />
-                                                                                        <button onClick={() => startEditing(activeGroup.id, toSentenceCase(activeGroup.topic))} className="text-gray-300 hover:text-blue-500"><Edit2 className="w-5 h-5"/></button>
-                                                                                        <button onClick={() => startAddingItem(activeGroup.id)} className="text-green-500 hover:text-green-700 ml-2" title="Thêm mục mới"><PlusCircle className="w-6 h-6" /></button>
+                                                                                        <div className="flex gap-1 ml-2">
+                                                                                            <button onClick={() => startEditing(activeGroup.id, toSentenceCase(activeGroup.topic))} className="text-gray-300 hover:text-blue-500"><Edit2 className="w-5 h-5"/></button>
+                                                                                            <button onClick={() => startAddingItem(activeGroup.id)} className="text-green-500 hover:text-green-700" title="Thêm mục mới"><PlusCircle className="w-6 h-6" /></button>
+                                                                                            <button onClick={() => deleteGroup(activeGroup.id)} className="text-gray-300 hover:text-red-500" title="Xóa Tab này"><Trash2 className="w-6 h-6" /></button>
+                                                                                        </div>
                                                                                     </>
                                                                                 )}
                                                                             </h2>
