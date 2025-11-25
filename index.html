@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Tổng Hợp & OCR Đa Năng (Full Manual Control)</title>
+    <title>AI Tổng Hợp & OCR Đa Năng (Drag & Drop Support)</title>
     
     <!-- 1. Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -204,20 +204,18 @@
             const [searchTerm, setSearchTerm] = useState('');
             const [libsLoaded, setLibsLoaded] = useState(false);
             const [dragOverGroupId, setDragOverGroupId] = useState(null);
+            const [isDraggingFile, setIsDraggingFile] = useState(false); // New state for file drag
             
             const [manualText, setManualText] = useState("");
             const [editingId, setEditingId] = useState(null); 
             const [editValue, setEditValue] = useState("");   
-            const [editTags, setEditTags] = useState(""); // State for editing tags
+            const [editTags, setEditTags] = useState(""); 
             
-            // States for Manual Insert (New Item)
             const [addingGroupId, setAddingGroupId] = useState(null);
             const [newItemText, setNewItemText] = useState("");
             const [newItemTagsInput, setNewItemTagsInput] = useState("");
 
             const [activeTabId, setActiveTabId] = useState(null);
-            
-            // New state for targeting specific tab
             const [targetGroupId, setTargetGroupId] = useState("auto");
 
             const fileImportRef = useRef(null);
@@ -382,26 +380,16 @@
                 return text;
             };
 
-            const handleManualUpload = () => {
-                if (!manualText.trim()) return;
-                setIsProcessing(true);
-                addLog("Đang xử lý dữ liệu nhập thủ công...");
-                const lines = manualText.split(/\r?\n/).filter(line => line.trim().length > 0);
-                let allLines = lines.map(line => ({ content: line.trim(), source: "Nhập tay" }));
-                processAndSave(allLines);
-                setManualText("");
-            };
-
-            const handleFileUpload = async (event) => {
-                const files = Array.from(event.target.files);
-                if (files.length === 0) return;
+            // --- UPDATED FILE HANDLING LOGIC (Generic) ---
+            const processFiles = async (filesArray) => {
+                if (filesArray.length === 0) return;
 
                 setIsProcessing(true);
-                addLog(`Đang xử lý ${files.length} file...`);
+                addLog(`Đang xử lý ${filesArray.length} file...`);
 
                 let allLines = [];
 
-                for (const file of files) {
+                for (const file of filesArray) {
                     try {
                         let text = "";
                         const ext = file.name.split('.').pop().toLowerCase();
@@ -447,6 +435,45 @@
                 processAndSave(allLines);
             };
 
+            const handleFileUpload = (event) => {
+                const files = Array.from(event.target.files);
+                processFiles(files);
+            };
+
+            // --- FILE DRAG & DROP HANDLERS ---
+            const handleFileDragOver = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDraggingFile(true);
+            };
+
+            const handleFileDragLeave = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDraggingFile(false);
+            };
+
+            const handleFileDrop = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDraggingFile(false);
+                
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    const files = Array.from(e.dataTransfer.files);
+                    processFiles(files);
+                }
+            };
+
+            const handleManualUpload = () => {
+                if (!manualText.trim()) return;
+                setIsProcessing(true);
+                addLog("Đang xử lý dữ liệu nhập thủ công...");
+                const lines = manualText.split(/\r?\n/).filter(line => line.trim().length > 0);
+                let allLines = lines.map(line => ({ content: line.trim(), source: "Nhập tay" }));
+                processAndSave(allLines);
+                setManualText("");
+            };
+
             const processAndSave = (allLines) => {
                 allLines.sort((a, b) => {
                     const aHas = hasVietnameseAccents(a.content);
@@ -473,7 +500,6 @@
                 setIsProcessing(false);
                 addLog(`✅ Hoàn tất xử lý. Dữ liệu đã được thêm vào: ${targetGroupId === 'auto' ? 'Tự động phân loại' : 'Nhóm đã chọn'}.`);
                 setViewMode('dashboard');
-                // Nếu chọn group cụ thể, chuyển view sang tab đó
                 if(targetGroupId !== 'auto') {
                     setActiveTabId(targetGroupId);
                     setDisplayStyle('tab');
@@ -508,7 +534,6 @@
                     let bestMatchGroupIndex = -1;
                     let bestMatchScore = 0;
                     
-                    // Nếu đã chọn group đích cụ thể, bỏ qua logic tìm kiếm mờ
                     if (specificGroupId !== "auto") {
                         const targetIndex = newKB.findIndex(g => g.id === specificGroupId);
                         if (targetIndex !== -1) {
@@ -516,7 +541,6 @@
                             bestMatchScore = 2.0; // Force match
                         }
                     } else {
-                        // Logic tìm kiếm mờ (AI)
                         const SIMILARITY_THRESHOLD = 0.55; 
                         newKB.forEach((group, index) => {
                             const filenameScore = calculateFuzzySimilarity(fileTopic, group.topic);
@@ -545,7 +569,7 @@
                         date: new Date().toISOString(),
                         isInferred: !hasAccent || wasRestored, 
                         confidenceScore: bestMatchScore > 1 ? 1 : bestMatchScore.toFixed(2),
-                        tags: [] // Khởi tạo mảng tags trống
+                        tags: [] 
                     };
 
                     if ((bestMatchScore > 0.55 || specificGroupId !== "auto") && bestMatchGroupIndex !== -1) {
@@ -570,7 +594,6 @@
                             }
                         }
                     } else {
-                        // Tạo group mới nếu không khớp hoặc Auto
                         let newTopicName = fileTopic;
                         if (!newTopicName || newTopicName.length < 2 || newTopicName === "Nhap Tay") {
                             newTopicName = processedContent.length > 80 ? processedContent.substring(0, 80) + "..." : processedContent;
@@ -751,7 +774,7 @@
                 element.click();
             };
 
-            // --- DRAG & DROP HANDLERS ---
+            // --- DRAG & DROP HANDLERS (Sorting) ---
             const handleDragStart = (e, groupId, itemId) => {
                 e.dataTransfer.setData("application/json", JSON.stringify({ sourceGroupId: groupId, itemId }));
                 e.dataTransfer.effectAllowed = "move";
@@ -853,7 +876,6 @@
                     const matchingItems = group.items.filter(item => {
                         const contentMatch = (item.normalized || removeVietnameseTones(item.content)).toLowerCase().includes(normSearch);
                         const sourceMatch = removeVietnameseTones(item.source || "").toLowerCase().includes(normSearch);
-                        // Thêm tìm kiếm theo Tag
                         const tagMatch = item.tags && item.tags.some(tag => removeVietnameseTones(tag).toLowerCase().includes(normSearch));
                         
                         return contentMatch || sourceMatch || tagMatch;
@@ -990,16 +1012,20 @@
                                         * Chọn nhóm đích để ép dữ liệu vào Tab cụ thể (bỏ qua AI phân loại).
                                     </div>
 
-                                    <div className="bg-white p-8 rounded-xl shadow-lg border border-gray-200 text-center">
-                                        <div className="mb-4 flex justify-center">
-                                            <div className="p-3 bg-blue-50 rounded-full">
-                                                <ImagePlus className="w-8 h-8 text-blue-600" />
+                                    <div 
+                                        className={`bg-white p-8 rounded-xl shadow-lg border-2 border-dashed transition-all duration-200 text-center ${isDraggingFile ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}
+                                        onDragOver={handleFileDragOver}
+                                        onDragLeave={handleFileDragLeave}
+                                        onDrop={handleFileDrop}
+                                    >
+                                        <div className="mb-4 flex justify-center pointer-events-none">
+                                            <div className={`p-3 rounded-full transition-colors ${isDraggingFile ? 'bg-blue-200' : 'bg-blue-50'}`}>
+                                                <ImagePlus className={`w-8 h-8 ${isDraggingFile ? 'text-blue-700' : 'text-blue-600'}`} />
                                             </div>
                                         </div>
-                                        <h3 className="text-lg font-bold text-gray-800 mb-2">Cách 1: Tải File (Hỗ trợ OCR Ảnh)</h3>
-                                        <p className="text-gray-500 mb-6 text-sm">
-                                            Tài liệu, PDF, Excel, và đặc biệt là <b>Ảnh chụp (OCR tiếng Việt)</b>.
-                                            <br/><i>(File backup .json cũng có thể import tại Sidebar)</i>
+                                        <h3 className="text-lg font-bold text-gray-800 mb-2 pointer-events-none">{isDraggingFile ? 'Thả file vào đây!' : 'Cách 1: Tải File (Kéo thả hoặc Click)'}</h3>
+                                        <p className="text-gray-500 mb-6 text-sm pointer-events-none">
+                                            Hỗ trợ: PDF, Word, Excel, Hình ảnh (OCR), HTML...
                                         </p>
                                         
                                         <label className={`inline-block relative ${!libsLoaded ? 'opacity-50 cursor-not-allowed' : ''}`}>
