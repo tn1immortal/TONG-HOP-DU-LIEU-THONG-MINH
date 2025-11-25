@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Tổng Hợp & OCR Đa Năng (Có Backup)</title>
+    <title>AI Tổng Hợp & OCR Đa Năng (Tab Mode)</title>
     
     <!-- 1. Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -29,6 +29,10 @@
         
         /* Highlight Animation */
         .highlight-match { background-color: #fde047; color: #000; border-radius: 2px; padding: 0 2px; font-weight: 600; }
+
+        /* Tab Scrollbar Hide (optional) */
+        .hide-scroll::-webkit-scrollbar { display: none; }
+        .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 font-sans">
@@ -59,10 +63,10 @@
         const Lock = ({ className }) => <IconWrapper className={className}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></IconWrapper>;
         const ImagePlus = ({ className }) => <IconWrapper className={className}><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7"/><line x1="16" x2="22" y1="5" y2="5"/><line x1="19" x2="19" y1="2" y2="8"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></IconWrapper>;
         const GripVertical = ({ className }) => <IconWrapper className={className}><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></IconWrapper>;
-        // New Icons for Backup/Restore
         const DownloadCloud = ({ className }) => <IconWrapper className={className}><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><polyline points="12 12 12 21"/><polyline points="8 17 12 21 16 17"/></IconWrapper>;
         const UploadCloud = ({ className }) => <IconWrapper className={className}><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><polyline points="12 12 12 21"/><polyline points="16 16 12 12 8 16"/><line x1="12" x2="12" y1="12" y2="21"/></IconWrapper>;
         const Database = ({ className }) => <IconWrapper className={className}><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></IconWrapper>;
+        const Layout = ({ className }) => <IconWrapper className={className}><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><line x1="3" x2="21" y1="9" y2="9"/><line x1="9" x2="9" y1="21" y2="9"/></IconWrapper>;
 
         // --- CẤU HÌNH CDN ---
         const LIBS = {
@@ -193,7 +197,7 @@
             const [isProcessing, setIsProcessing] = useState(false);
             const [logs, setLogs] = useState([]);
             const [viewMode, setViewMode] = useState('dashboard');
-            const [displayStyle, setDisplayStyle] = useState('document');
+            const [displayStyle, setDisplayStyle] = useState('document'); // 'document', 'card', 'tab'
             const [searchTerm, setSearchTerm] = useState('');
             const [libsLoaded, setLibsLoaded] = useState(false);
             const [dragOverGroupId, setDragOverGroupId] = useState(null);
@@ -202,7 +206,8 @@
             const [editingId, setEditingId] = useState(null); 
             const [editValue, setEditValue] = useState("");   
             
-            // Ref cho input file ẩn dùng để import
+            const [activeTabId, setActiveTabId] = useState(null);
+
             const fileImportRef = useRef(null);
 
             useEffect(() => {
@@ -253,7 +258,6 @@
                 setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${message}`, ...prev.slice(0, 49)]);
             };
 
-            // --- EXPORT & IMPORT DATA (NEW FEATURES) ---
             const handleExportData = () => {
                 if (knowledgeBase.length === 0) {
                     alert("Chưa có dữ liệu để xuất!");
@@ -269,7 +273,7 @@
                 const downloadAnchorNode = document.createElement('a');
                 downloadAnchorNode.setAttribute("href", dataStr);
                 downloadAnchorNode.setAttribute("download", `Backup_DuLieu_${new Date().toISOString().slice(0,10)}.json`);
-                document.body.appendChild(downloadAnchorNode); // required for firefox
+                document.body.appendChild(downloadAnchorNode); 
                 downloadAnchorNode.click();
                 downloadAnchorNode.remove();
                 addLog("Đã xuất file backup dữ liệu (JSON).");
@@ -290,7 +294,6 @@
                     try {
                         const importedData = JSON.parse(e.target.result);
                         
-                        // Basic validation
                         if (!importedData.knowledgeBase || !Array.isArray(importedData.knowledgeBase)) {
                             throw new Error("Cấu trúc file không hợp lệ.");
                         }
@@ -308,13 +311,11 @@
                         alert("Lỗi đọc file backup: " + error.message);
                         addLog("Lỗi đọc file backup.");
                     }
-                    // Reset value để có thể chọn lại cùng 1 file
                     event.target.value = null; 
                 };
                 reader.readAsText(file);
             };
 
-            // --- FILE READERS ---
             const readPdfFile = async (file) => {
                 if (!window.pdfjsLib) throw new Error("Thư viện PDF chưa tải.");
                 window.pdfjsLib.GlobalWorkerOptions.workerSrc = LIBS.PDF_WORKER;
@@ -728,20 +729,31 @@
                 }
             };
 
-            const filteredKB = knowledgeBase.map(group => {
-                if (!searchTerm) return group;
-                const normSearch = removeVietnameseTones(searchTerm).toLowerCase();
-                const topicMatches = removeVietnameseTones(group.topic).toLowerCase().includes(normSearch);
-                const matchingItems = group.items.filter(item => {
-                    const contentMatch = (item.normalized || removeVietnameseTones(item.content)).toLowerCase().includes(normSearch);
-                    const sourceMatch = removeVietnameseTones(item.source || "").toLowerCase().includes(normSearch);
-                    return contentMatch || sourceMatch;
-                });
+            const filteredKB = useMemo(() => {
+                return knowledgeBase.map(group => {
+                    if (!searchTerm) return group;
+                    const normSearch = removeVietnameseTones(searchTerm).toLowerCase();
+                    const topicMatches = removeVietnameseTones(group.topic).toLowerCase().includes(normSearch);
+                    const matchingItems = group.items.filter(item => {
+                        const contentMatch = (item.normalized || removeVietnameseTones(item.content)).toLowerCase().includes(normSearch);
+                        const sourceMatch = removeVietnameseTones(item.source || "").toLowerCase().includes(normSearch);
+                        return contentMatch || sourceMatch;
+                    });
 
-                if (topicMatches) return group;
-                if (matchingItems.length > 0) return { ...group, items: matchingItems };
-                return null;
-            }).filter(g => g !== null);
+                    if (topicMatches) return group;
+                    if (matchingItems.length > 0) return { ...group, items: matchingItems };
+                    return null;
+                }).filter(g => g !== null);
+            }, [knowledgeBase, searchTerm]);
+
+            // Set active tab default logic
+            useEffect(() => {
+                if (filteredKB.length > 0 && (!activeTabId || !filteredKB.find(g => g.id === activeTabId))) {
+                    setActiveTabId(filteredKB[0].id);
+                }
+            }, [filteredKB, activeTabId]);
+
+            const activeGroup = filteredKB.find(g => g.id === activeTabId);
 
             return (
                 <div className="flex h-screen bg-gray-100 text-gray-800 font-sans">
@@ -812,6 +824,7 @@
                                     <div className="flex bg-gray-100 rounded-lg p-1 mr-2">
                                         <button onClick={() => setDisplayStyle('document')} className={`p-1.5 rounded-md transition ${displayStyle === 'document' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`} title="Chế độ văn bản"><ListIcon className="w-4 h-4" /></button>
                                         <button onClick={() => setDisplayStyle('card')} className={`p-1.5 rounded-md transition ${displayStyle === 'card' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`} title="Chế độ thẻ"><GridIcon className="w-4 h-4" /></button>
+                                        <button onClick={() => setDisplayStyle('tab')} className={`p-1.5 rounded-md transition ${displayStyle === 'tab' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`} title="Chế độ Tab"><Layout className="w-4 h-4" /></button>
                                     </div>
                                 )}
                                 {knowledgeBase.length > 0 && (
@@ -822,9 +835,9 @@
                             </div>
                         </header>
 
-                        <main className="flex-1 overflow-auto p-8 relative bg-gray-100">
+                        <main className="flex-1 overflow-auto bg-gray-100 flex flex-col">
                             {viewMode === 'upload' && (
-                                <div className="max-w-2xl mx-auto mt-8 space-y-6">
+                                <div className="max-w-2xl mx-auto mt-8 space-y-6 w-full p-8 overflow-auto">
                                     <div className="bg-white p-8 rounded-xl shadow-lg border border-gray-200 text-center">
                                         <div className="mb-4 flex justify-center">
                                             <div className="p-3 bg-blue-50 rounded-full">
@@ -879,9 +892,10 @@
                             )}
 
                             {viewMode === 'dashboard' && (
-                                <div className="max-w-4xl mx-auto">
-                                    <div className="mb-6 sticky top-0 z-10">
-                                        <div className="relative shadow-sm">
+                                <div className="flex flex-col h-full">
+                                    {/* SEARCH BAR */}
+                                    <div className="p-4 md:p-8 pb-4 flex-shrink-0">
+                                        <div className="max-w-4xl mx-auto relative shadow-sm">
                                             <Search className="absolute left-4 top-3.5 text-gray-400 w-5 h-5" />
                                             <input 
                                                 type="text" 
@@ -893,133 +907,234 @@
                                         </div>
                                     </div>
 
-                                    {filteredKB.length === 0 ? (
-                                        <div className="text-center py-20 opacity-50">
-                                            <FileText className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                                            <p className="text-gray-500">Chưa có dữ liệu báo cáo.</p>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            {displayStyle === 'document' ? (
-                                                <div className="bg-white shadow-md rounded-none md:rounded-lg min-h-[500px] p-10 md:p-16 border border-gray-200 print:shadow-none print:border-none">
-                                                    <div className="text-center mb-10 border-b border-gray-100 pb-6">
-                                                        <h1 className="text-2xl font-bold text-slate-800 uppercase mb-2">Báo Cáo Tổng Hợp</h1>
-                                                        <p className="text-sm text-gray-500 italic">Ngày xuất: {new Date().toLocaleDateString('vi-VN')}</p>
-                                                    </div>
-                                                    
-                                                    <div className="space-y-8 font-serif md:font-sans text-slate-800">
-                                                        {filteredKB.map((group, idx) => (
-                                                            <div 
-                                                                key={group.id} 
-                                                                className={`group/topic transition-all duration-200 ${dragOverGroupId === group.id ? 'droppable-hover p-2 rounded' : ''}`}
-                                                                onDragOver={(e) => handleDragOver(e, group.id)}
-                                                                onDragLeave={handleDragLeave}
-                                                                onDrop={(e) => handleDrop(e, group.id)}
-                                                            >
-                                                                <div className="flex items-center gap-2 mb-3">
-                                                                    {editingId === group.id ? (
-                                                                        <div className="flex-1 flex gap-2">
-                                                                            <input type="text" value={editValue} onChange={(e) => setEditValue(e.target.value)} className="flex-1 border border-blue-300 rounded px-2 py-1 text-lg font-bold" autoFocus />
-                                                                            <button onClick={() => saveTopic(group.id)} className="text-green-600 hover:bg-green-100 p-1 rounded"><Save className="w-5 h-5"/></button>
-                                                                            <button onClick={cancelEditing} className="text-red-500 hover:bg-red-100 p-1 rounded"><X className="w-5 h-5"/></button>
-                                                                        </div>
-                                                                    ) : (
-                                                                        <>
-                                                                            <h3 className="text-lg font-bold text-slate-900 tracking-wide flex items-center gap-2">
-                                                                                {idx + 1}. <HighlightText text={toSentenceCase(group.topic)} highlight={searchTerm} />
-                                                                                {group.isManualTopic && <Lock className="w-4 h-4 text-orange-400" title="Đã khóa tên nhóm" />}
-                                                                            </h3>
-                                                                            <button onClick={() => startEditing(group.id, toSentenceCase(group.topic))} className="opacity-0 group-hover/topic:opacity-100 transition text-gray-400 hover:text-blue-500 p-1" title="Sửa tiêu đề"><Edit2 className="w-4 h-4" /></button>
-                                                                        </>
-                                                                    )}
-                                                                </div>
-                                                                <ul className="list-disc pl-6 space-y-2 text-base leading-relaxed text-slate-700">
-                                                                    {group.items.map((item) => (
-                                                                        <li 
-                                                                            key={item.id} 
-                                                                            className="pl-2 group/item relative pr-8 flex items-start hover:bg-gray-50 rounded transition-colors"
-                                                                            draggable
-                                                                            onDragStart={(e) => handleDragStart(e, group.id, item.id)}
-                                                                            onDragOver={(e) => e.preventDefault()}
-                                                                            onDrop={(e) => handleItemDrop(e, group.id, item.id)}
-                                                                        >
-                                                                             <span className="opacity-0 group-hover/item:opacity-50 cursor-move mr-2 mt-1" title="Kéo để di chuyển"><GripVertical className="w-4 h-4 text-gray-400"/></span>
-                                                                             <div className="flex-1">
-                                                                                 {editingId === item.id ? (
-                                                                                     <div className="flex gap-2 items-start">
-                                                                                        <textarea value={editValue} onChange={(e) => setEditValue(e.target.value)} className="flex-1 border border-blue-300 rounded px-2 py-1 text-base min-h-[60px]" autoFocus></textarea>
-                                                                                        <div className="flex flex-col gap-1">
-                                                                                            <button onClick={() => saveItem(group.id, item.id)} className="text-green-600 hover:bg-green-100 p-1 rounded"><Save className="w-4 h-4"/></button>
-                                                                                            <button onClick={cancelEditing} className="text-gray-500 hover:bg-gray-100 p-1 rounded"><X className="w-4 h-4"/></button>
-                                                                                        </div>
-                                                                                     </div>
-                                                                                 ) : (
-                                                                                     <>
-                                                                                        <span className={item.isInferred ? "text-blue-900" : ""}>
-                                                                                            <HighlightText text={toSentenceCase(item.content)} highlight={searchTerm} />
-                                                                                        </span>
-                                                                                        {item.isInferred && <span className="text-[10px] text-blue-400 ml-2 select-none" title="Đã được AI phục hồi dấu">(đã phục hồi dấu)</span>}
-                                                                                        <span className="text-[10px] text-gray-400 ml-2 select-none">- {item.source}</span>
-                                                                                        <div className="absolute top-0 right-0 hidden group-hover/item:flex gap-1 bg-white shadow-sm border rounded p-0.5 z-10">
-                                                                                                <button onClick={() => startEditing(item.id, toSentenceCase(item.content))} className="text-gray-400 hover:text-blue-500 p-1" title="Sửa"><Edit2 className="w-3 h-3"/></button>
-                                                                                                <button onClick={() => deleteItem(group.id, item.id)} className="text-gray-400 hover:text-red-500 p-1" title="Xóa"><Trash2 className="w-3 h-3"/></button>
-                                                                                        </div>
-                                                                                     </>
-                                                                                 )}
-                                                                             </div>
-                                                                        </li>
-                                                                    ))}
-                                                                </ul>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                    <div className="mt-16 pt-8 border-t border-gray-100 text-center text-xs text-gray-400">— Hết báo cáo —</div>
+                                    {/* CONTENT AREA */}
+                                    <div className="flex-1 overflow-auto px-4 md:px-8 pb-8">
+                                        <div className="max-w-4xl mx-auto h-full">
+                                            {filteredKB.length === 0 ? (
+                                                <div className="text-center py-20 opacity-50">
+                                                    <FileText className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                                                    <p className="text-gray-500">Chưa có dữ liệu báo cáo.</p>
                                                 </div>
                                             ) : (
-                                                <div className="grid gap-4">
-                                                    {filteredKB.map((group, idx) => (
-                                                        <div 
-                                                            key={group.id} 
-                                                            className={`bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden transition-all duration-200 ${dragOverGroupId === group.id ? 'droppable-hover' : ''}`}
-                                                            onDragOver={(e) => handleDragOver(e, group.id)}
-                                                            onDragLeave={handleDragLeave}
-                                                            onDrop={(e) => handleDrop(e, group.id)}
-                                                        >
-                                                            <div className="bg-gray-50 px-4 py-3 border-b border-gray-100 flex justify-between items-center group/cardHeader">
-                                                                <h3 className="font-bold text-slate-700 flex items-center gap-2">
-                                                                    {idx + 1}. <HighlightText text={toSentenceCase(group.topic)} highlight={searchTerm} />
-                                                                    {group.isManualTopic && <Lock className="w-3 h-3 text-orange-400"/>}
-                                                                    <button onClick={() => startEditing(group.id, toSentenceCase(group.topic))} className="opacity-0 group-hover/cardHeader:opacity-100 text-gray-400 hover:text-blue-500"><Edit2 className="w-3 h-3"/></button>
-                                                                </h3>
-                                                                <span className="text-xs bg-white border border-gray-200 px-2 py-1 rounded text-gray-500">{group.items.length} tin</span>
+                                                <>
+                                                    {/* --- DOCUMENT VIEW --- */}
+                                                    {displayStyle === 'document' && (
+                                                        <div className="bg-white shadow-md rounded-none md:rounded-lg min-h-[500px] p-10 md:p-16 border border-gray-200 print:shadow-none print:border-none">
+                                                            <div className="text-center mb-10 border-b border-gray-100 pb-6">
+                                                                <h1 className="text-2xl font-bold text-slate-800 uppercase mb-2">Báo Cáo Tổng Hợp</h1>
+                                                                <p className="text-sm text-gray-500 italic">Ngày xuất: {new Date().toLocaleDateString('vi-VN')}</p>
                                                             </div>
-                                                            <div className="p-4 space-y-2">
-                                                                {group.items.map((item) => (
-                                                                    <div 
-                                                                        key={item.id} 
-                                                                        className="text-sm text-gray-600 pl-2 border-l-2 border-transparent hover:border-blue-300 transition-colors group/cardItem flex justify-between cursor-move"
-                                                                        draggable
-                                                                        onDragStart={(e) => handleDragStart(e, group.id, item.id)}
-                                                                        onDragOver={(e) => e.preventDefault()}
-                                                                        onDrop={(e) => handleItemDrop(e, group.id, item.id)}
+                                                            <div className="space-y-8 font-serif md:font-sans text-slate-800">
+                                                                {filteredKB.map((group, idx) => (
+                                                                    <div key={group.id} className={`group/topic transition-all duration-200 ${dragOverGroupId === group.id ? 'droppable-hover p-2 rounded' : ''}`}
+                                                                        onDragOver={(e) => handleDragOver(e, group.id)}
+                                                                        onDragLeave={handleDragLeave}
+                                                                        onDrop={(e) => handleDrop(e, group.id)}
                                                                     >
-                                                                        <span>
-                                                                            <HighlightText text={toSentenceCase(item.content)} highlight={searchTerm} />
-                                                                            {item.isInferred && <span className="text-xs text-blue-400 ml-2">*</span>}
-                                                                        </span>
-                                                                        <div className="opacity-0 group-hover/cardItem:opacity-100 flex gap-1">
-                                                                            <button onClick={() => startEditing(item.id, toSentenceCase(item.content))}><Edit2 className="w-3 h-3 text-gray-400 hover:text-blue-500"/></button>
-                                                                            <button onClick={() => deleteItem(group.id, item.id)}><Trash2 className="w-3 h-3 text-gray-400 hover:text-red-500"/></button>
+                                                                        <div className="flex items-center gap-2 mb-3">
+                                                                            {editingId === group.id ? (
+                                                                                <div className="flex-1 flex gap-2">
+                                                                                    <input type="text" value={editValue} onChange={(e) => setEditValue(e.target.value)} className="flex-1 border border-blue-300 rounded px-2 py-1 text-lg font-bold" autoFocus />
+                                                                                    <button onClick={() => saveTopic(group.id)} className="text-green-600 hover:bg-green-100 p-1 rounded"><Save className="w-5 h-5"/></button>
+                                                                                    <button onClick={cancelEditing} className="text-red-500 hover:bg-red-100 p-1 rounded"><X className="w-5 h-5"/></button>
+                                                                                </div>
+                                                                            ) : (
+                                                                                <>
+                                                                                    <h3 className="text-lg font-bold text-slate-900 tracking-wide flex items-center gap-2">
+                                                                                        {idx + 1}. <HighlightText text={toSentenceCase(group.topic)} highlight={searchTerm} />
+                                                                                        {group.isManualTopic && <Lock className="w-4 h-4 text-orange-400" title="Đã khóa tên nhóm" />}
+                                                                                    </h3>
+                                                                                    <button onClick={() => startEditing(group.id, toSentenceCase(group.topic))} className="opacity-0 group-hover/topic:opacity-100 transition text-gray-400 hover:text-blue-500 p-1" title="Sửa tiêu đề"><Edit2 className="w-4 h-4" /></button>
+                                                                                </>
+                                                                            )}
                                                                         </div>
+                                                                        <ul className="list-disc pl-6 space-y-2 text-base leading-relaxed text-slate-700">
+                                                                            {group.items.map((item) => (
+                                                                                <li key={item.id} className="pl-2 group/item relative pr-8 flex items-start hover:bg-gray-50 rounded transition-colors"
+                                                                                    draggable
+                                                                                    onDragStart={(e) => handleDragStart(e, group.id, item.id)}
+                                                                                    onDragOver={(e) => e.preventDefault()}
+                                                                                    onDrop={(e) => handleItemDrop(e, group.id, item.id)}
+                                                                                >
+                                                                                     <span className="opacity-0 group-hover/item:opacity-50 cursor-move mr-2 mt-1" title="Kéo để di chuyển"><GripVertical className="w-4 h-4 text-gray-400"/></span>
+                                                                                     <div className="flex-1">
+                                                                                         {editingId === item.id ? (
+                                                                                             <div className="flex gap-2 items-start">
+                                                                                                 <textarea value={editValue} onChange={(e) => setEditValue(e.target.value)} className="flex-1 border border-blue-300 rounded px-2 py-1 text-base min-h-[60px]" autoFocus></textarea>
+                                                                                                 <div className="flex flex-col gap-1">
+                                                                                                     <button onClick={() => saveItem(group.id, item.id)} className="text-green-600 hover:bg-green-100 p-1 rounded"><Save className="w-4 h-4"/></button>
+                                                                                                     <button onClick={cancelEditing} className="text-gray-500 hover:bg-gray-100 p-1 rounded"><X className="w-4 h-4"/></button>
+                                                                                                 </div>
+                                                                                             </div>
+                                                                                         ) : (
+                                                                                             <>
+                                                                                                 <span className={item.isInferred ? "text-blue-900" : ""}>
+                                                                                                     <HighlightText text={toSentenceCase(item.content)} highlight={searchTerm} />
+                                                                                                 </span>
+                                                                                                 {item.isInferred && <span className="text-[10px] text-blue-400 ml-2 select-none" title="Đã được AI phục hồi dấu">(đã phục hồi dấu)</span>}
+                                                                                                 <span className="text-[10px] text-gray-400 ml-2 select-none">- {item.source}</span>
+                                                                                                 <div className="absolute top-0 right-0 hidden group-hover/item:flex gap-1 bg-white shadow-sm border rounded p-0.5 z-10">
+                                                                                                         <button onClick={() => startEditing(item.id, toSentenceCase(item.content))} className="text-gray-400 hover:text-blue-500 p-1" title="Sửa"><Edit2 className="w-3 h-3"/></button>
+                                                                                                         <button onClick={() => deleteItem(group.id, item.id)} className="text-gray-400 hover:text-red-500 p-1" title="Xóa"><Trash2 className="w-3 h-3"/></button>
+                                                                                                 </div>
+                                                                                             </>
+                                                                                         )}
+                                                                                     </div>
+                                                                                </li>
+                                                                            ))}
+                                                                        </ul>
                                                                     </div>
                                                                 ))}
+                                                                <div className="mt-16 pt-8 border-t border-gray-100 text-center text-xs text-gray-400">— Hết báo cáo —</div>
                                                             </div>
                                                         </div>
-                                                    ))}
-                                                </div>
+                                                    )}
+
+                                                    {/* --- CARD VIEW --- */}
+                                                    {displayStyle === 'card' && (
+                                                        <div className="grid gap-4">
+                                                            {filteredKB.map((group, idx) => (
+                                                                <div key={group.id} className={`bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden transition-all duration-200 ${dragOverGroupId === group.id ? 'droppable-hover' : ''}`}
+                                                                    onDragOver={(e) => handleDragOver(e, group.id)}
+                                                                    onDragLeave={handleDragLeave}
+                                                                    onDrop={(e) => handleDrop(e, group.id)}
+                                                                >
+                                                                    <div className="bg-gray-50 px-4 py-3 border-b border-gray-100 flex justify-between items-center group/cardHeader">
+                                                                        <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                                                                            {idx + 1}. <HighlightText text={toSentenceCase(group.topic)} highlight={searchTerm} />
+                                                                            {group.isManualTopic && <Lock className="w-3 h-3 text-orange-400"/>}
+                                                                            <button onClick={() => startEditing(group.id, toSentenceCase(group.topic))} className="opacity-0 group-hover/cardHeader:opacity-100 text-gray-400 hover:text-blue-500"><Edit2 className="w-3 h-3"/></button>
+                                                                        </h3>
+                                                                        <span className="text-xs bg-white border border-gray-200 px-2 py-1 rounded text-gray-500">{group.items.length} tin</span>
+                                                                    </div>
+                                                                    <div className="p-4 space-y-2">
+                                                                        {group.items.map((item) => (
+                                                                            <div key={item.id} className="text-sm text-gray-600 pl-2 border-l-2 border-transparent hover:border-blue-300 transition-colors group/cardItem flex justify-between cursor-move"
+                                                                                draggable
+                                                                                onDragStart={(e) => handleDragStart(e, group.id, item.id)}
+                                                                                onDragOver={(e) => e.preventDefault()}
+                                                                                onDrop={(e) => handleItemDrop(e, group.id, item.id)}
+                                                                            >
+                                                                                <span>
+                                                                                    <HighlightText text={toSentenceCase(item.content)} highlight={searchTerm} />
+                                                                                    {item.isInferred && <span className="text-xs text-blue-400 ml-2">*</span>}
+                                                                                </span>
+                                                                                <div className="opacity-0 group-hover/cardItem:opacity-100 flex gap-1">
+                                                                                    <button onClick={() => startEditing(item.id, toSentenceCase(item.content))}><Edit2 className="w-3 h-3 text-gray-400 hover:text-blue-500"/></button>
+                                                                                    <button onClick={() => deleteItem(group.id, item.id)}><Trash2 className="w-3 h-3 text-gray-400 hover:text-red-500"/></button>
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
+                                                    {/* --- TAB VIEW (NEW) --- */}
+                                                    {displayStyle === 'tab' && (
+                                                        <div className="bg-white rounded-lg shadow-md border border-gray-200 h-full flex flex-col overflow-hidden">
+                                                            {/* Tab Navigation */}
+                                                            <div className="flex overflow-x-auto hide-scroll border-b border-gray-100 bg-gray-50">
+                                                                {filteredKB.map((group) => (
+                                                                    <button
+                                                                        key={group.id}
+                                                                        onClick={() => setActiveTabId(group.id)}
+                                                                        className={`px-5 py-3 text-sm font-medium whitespace-nowrap transition-colors border-r border-gray-100 outline-none
+                                                                            ${activeTabId === group.id ? 'bg-white text-blue-600 border-t-2 border-t-blue-600' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700 border-t-2 border-t-transparent'}
+                                                                        `}
+                                                                    >
+                                                                        <HighlightText text={toSentenceCase(group.topic)} highlight={searchTerm} />
+                                                                        <span className="ml-2 text-xs opacity-60 bg-gray-200 px-1.5 rounded-full">{group.items.length}</span>
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+
+                                                            {/* Tab Content */}
+                                                            <div className="flex-1 overflow-auto p-6 bg-white relative">
+                                                                {activeGroup ? (
+                                                                    <div key={activeGroup.id} className="animate-in fade-in duration-300">
+                                                                        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-50">
+                                                                            <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                                                                                 {editingId === activeGroup.id ? (
+                                                                                    <div className="flex gap-2">
+                                                                                        <input type="text" value={editValue} onChange={(e) => setEditValue(e.target.value)} className="border border-blue-300 rounded px-2 py-1 text-xl" autoFocus />
+                                                                                        <button onClick={() => saveTopic(activeGroup.id)} className="text-green-600"><Save className="w-6 h-6"/></button>
+                                                                                        <button onClick={cancelEditing} className="text-red-500"><X className="w-6 h-6"/></button>
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <>
+                                                                                        <HighlightText text={toSentenceCase(activeGroup.topic)} highlight={searchTerm} />
+                                                                                        <button onClick={() => startEditing(activeGroup.id, toSentenceCase(activeGroup.topic))} className="text-gray-300 hover:text-blue-500"><Edit2 className="w-5 h-5"/></button>
+                                                                                    </>
+                                                                                )}
+                                                                            </h2>
+                                                                        </div>
+
+                                                                        <ul className="space-y-3"
+                                                                            onDragOver={(e) => handleDragOver(e, activeGroup.id)}
+                                                                            onDragLeave={handleDragLeave}
+                                                                            onDrop={(e) => handleDrop(e, activeGroup.id)}
+                                                                        >
+                                                                            {activeGroup.items.map((item, idx) => (
+                                                                                <li key={item.id} 
+                                                                                    className={`p-3 rounded-lg border border-gray-100 hover:border-blue-200 hover:shadow-sm transition group/tabItem flex gap-3
+                                                                                        ${dragOverGroupId === activeGroup.id ? 'bg-blue-50' : 'bg-white'}
+                                                                                    `}
+                                                                                    draggable
+                                                                                    onDragStart={(e) => handleDragStart(e, activeGroup.id, item.id)}
+                                                                                    onDragOver={(e) => e.preventDefault()}
+                                                                                    onDrop={(e) => handleItemDrop(e, activeGroup.id, item.id)}
+                                                                                >
+                                                                                    <div className="mt-1 text-gray-300 cursor-move" title="Kéo thả để sắp xếp">
+                                                                                        <GripVertical className="w-5 h-5" />
+                                                                                    </div>
+                                                                                    <div className="flex-1">
+                                                                                         {editingId === item.id ? (
+                                                                                             <div className="flex gap-2 items-start w-full">
+                                                                                                 <textarea value={editValue} onChange={(e) => setEditValue(e.target.value)} className="flex-1 border border-blue-300 rounded px-3 py-2 text-base min-h-[80px]" autoFocus></textarea>
+                                                                                                 <div className="flex flex-col gap-2">
+                                                                                                     <button onClick={() => saveItem(activeGroup.id, item.id)} className="text-green-600 bg-green-50 p-2 rounded hover:bg-green-100"><Save className="w-5 h-5"/></button>
+                                                                                                     <button onClick={cancelEditing} className="text-gray-500 bg-gray-50 p-2 rounded hover:bg-gray-100"><X className="w-5 h-5"/></button>
+                                                                                                 </div>
+                                                                                             </div>
+                                                                                         ) : (
+                                                                                             <div className="flex justify-between items-start gap-4">
+                                                                                                <div className="text-base text-gray-700 leading-relaxed">
+                                                                                                    <HighlightText text={toSentenceCase(item.content)} highlight={searchTerm} />
+                                                                                                    <div className="mt-1 flex items-center gap-2">
+                                                                                                        {item.isInferred && <span className="text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">AI Phục hồi</span>}
+                                                                                                        <span className="text-xs text-gray-400 italic">{item.source}</span>
+                                                                                                    </div>
+                                                                                                </div>
+                                                                                                <div className="flex gap-2 opacity-0 group-hover/tabItem:opacity-100 transition-opacity">
+                                                                                                    <button onClick={() => startEditing(item.id, toSentenceCase(item.content))} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded"><Edit2 className="w-4 h-4"/></button>
+                                                                                                    <button onClick={() => deleteItem(activeGroup.id, item.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4"/></button>
+                                                                                                </div>
+                                                                                             </div>
+                                                                                         )}
+                                                                                    </div>
+                                                                                </li>
+                                                                            ))}
+                                                                            {activeGroup.items.length === 0 && (
+                                                                                <div className="text-center py-10 text-gray-400 border-2 border-dashed border-gray-100 rounded-lg">
+                                                                                    Kéo thả nội dung vào đây hoặc thêm mới từ mục Nạp dữ liệu
+                                                                                </div>
+                                                                            )}
+                                                                        </ul>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="flex items-center justify-center h-full text-gray-400">
+                                                                        Chọn một tab để xem nội dung
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </>
                                             )}
-                                        </>
-                                    )}
+                                        </div>
+                                    </div>
                                 </div>
                             )}
                         </main>
