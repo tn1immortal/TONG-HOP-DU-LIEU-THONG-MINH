@@ -31,13 +31,16 @@
         /* Hiệu ứng khi kéo thả */
         .droppable-hover { border: 2px dashed #2563eb !important; background-color: #eff6ff; }
         .item-droppable-hover { border-top: 2px solid #2563eb; }
+        
+        /* Highlight Animation */
+        .highlight-match { background-color: #fde047; color: #000; border-radius: 2px; padding: 0 2px; font-weight: 600; }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800 font-sans">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+        const { useState, useEffect, useRef, useMemo } = React;
 
         // --- ICON COMPONENTS ---
         const IconWrapper = ({ children, className }) => (
@@ -73,9 +76,10 @@
             TESSERACT: "https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js" // Thư viện OCR
         };
 
-        // --- NLP & LOGIC HELPER ---
+        // --- TIỆN ÍCH XỬ LÝ NGÔN NGỮ (NLP) ---
         const removeVietnameseTones = (str) => {
             if (!str) return "";
+            str = str.normalize('NFC'); // Chuẩn hóa chuỗi trước
             str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a");
             str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e");
             str = str.replace(/ì|í|ị|ỉ|ĩ/g, "i");
@@ -156,6 +160,44 @@
                 const key = removeVietnameseTones(part).toLowerCase();
                 return dictionary[key] || part;
             }).join('');
+        };
+
+        // --- COMPONENT TÔ SÁNG TỪ KHÓA (NEW) ---
+        const HighlightText = ({ text, highlight }) => {
+            if (!highlight || !text) return <span>{text}</span>;
+
+            const normalizedText = removeVietnameseTones(text).toLowerCase();
+            const normalizedHighlight = removeVietnameseTones(highlight).toLowerCase();
+            
+            if (!normalizedText.includes(normalizedHighlight)) return <span>{text}</span>;
+
+            const parts = [];
+            let currentIndex = 0;
+            let searchIndex = normalizedText.indexOf(normalizedHighlight);
+
+            while (searchIndex !== -1) {
+                // Phần trước từ khóa
+                if (searchIndex > currentIndex) {
+                    parts.push(<span key={currentIndex + 'pre'}>{text.substring(currentIndex, searchIndex)}</span>);
+                }
+                
+                // Phần từ khóa (lấy từ text gốc để giữ format)
+                parts.push(
+                    <span key={searchIndex + 'match'} className="highlight-match">
+                        {text.substring(searchIndex, searchIndex + normalizedHighlight.length)}
+                    </span>
+                );
+
+                currentIndex = searchIndex + normalizedHighlight.length;
+                searchIndex = normalizedText.indexOf(normalizedHighlight, currentIndex);
+            }
+
+            // Phần còn lại
+            if (currentIndex < text.length) {
+                parts.push(<span key={currentIndex + 'post'}>{text.substring(currentIndex)}</span>);
+            }
+
+            return <>{parts}</>;
         };
 
         const App = () => {
@@ -821,7 +863,7 @@
                                                                     ) : (
                                                                         <>
                                                                             <h3 className="text-lg font-bold text-slate-900 tracking-wide flex items-center gap-2">
-                                                                                {idx + 1}. {toSentenceCase(group.topic)}
+                                                                                {idx + 1}. <HighlightText text={toSentenceCase(group.topic)} highlight={searchTerm} />
                                                                                 {group.isManualTopic && <Lock className="w-4 h-4 text-orange-400" title="Đã khóa tên nhóm" />}
                                                                             </h3>
                                                                             <button onClick={() => startEditing(group.id, toSentenceCase(group.topic))} className="opacity-0 group-hover/topic:opacity-100 transition text-gray-400 hover:text-blue-500 p-1" title="Sửa tiêu đề"><Edit2 className="w-4 h-4" /></button>
@@ -850,7 +892,9 @@
                                                                                      </div>
                                                                                  ) : (
                                                                                      <>
-                                                                                        <span className={item.isInferred ? "text-blue-900" : ""}>{toSentenceCase(item.content)}</span>
+                                                                                        <span className={item.isInferred ? "text-blue-900" : ""}>
+                                                                                            <HighlightText text={toSentenceCase(item.content)} highlight={searchTerm} />
+                                                                                        </span>
                                                                                         {item.isInferred && <span className="text-[10px] text-blue-400 ml-2 select-none" title="Đã được AI phục hồi dấu">(đã phục hồi dấu)</span>}
                                                                                         <span className="text-[10px] text-gray-400 ml-2 select-none">- {item.source}</span>
                                                                                         <div className="absolute top-0 right-0 hidden group-hover/item:flex gap-1 bg-white shadow-sm border rounded p-0.5 z-10">
@@ -880,7 +924,7 @@
                                                         >
                                                             <div className="bg-gray-50 px-4 py-3 border-b border-gray-100 flex justify-between items-center group/cardHeader">
                                                                 <h3 className="font-bold text-slate-700 flex items-center gap-2">
-                                                                    {idx + 1}. {toSentenceCase(group.topic)}
+                                                                    {idx + 1}. <HighlightText text={toSentenceCase(group.topic)} highlight={searchTerm} />
                                                                     {group.isManualTopic && <Lock className="w-3 h-3 text-orange-400"/>}
                                                                     <button onClick={() => startEditing(group.id, toSentenceCase(group.topic))} className="opacity-0 group-hover/cardHeader:opacity-100 text-gray-400 hover:text-blue-500"><Edit2 className="w-3 h-3"/></button>
                                                                 </h3>
@@ -896,7 +940,10 @@
                                                                         onDragOver={(e) => e.preventDefault()}
                                                                         onDrop={(e) => handleItemDrop(e, group.id, item.id)}
                                                                     >
-                                                                        <span>{toSentenceCase(item.content)} {item.isInferred && <span className="text-xs text-blue-400 ml-2">*</span>}</span>
+                                                                        <span>
+                                                                            <HighlightText text={toSentenceCase(item.content)} highlight={searchTerm} />
+                                                                            {item.isInferred && <span className="text-xs text-blue-400 ml-2">*</span>}
+                                                                        </span>
                                                                         <div className="opacity-0 group-hover/cardItem:opacity-100 flex gap-1">
                                                                             <button onClick={() => startEditing(item.id, toSentenceCase(item.content))}><Edit2 className="w-3 h-3 text-gray-400 hover:text-blue-500"/></button>
                                                                             <button onClick={() => deleteItem(group.id, item.id)}><Trash2 className="w-3 h-3 text-gray-400 hover:text-red-500"/></button>
