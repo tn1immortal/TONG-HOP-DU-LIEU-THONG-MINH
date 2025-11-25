@@ -647,12 +647,24 @@
                 }
             };
 
-            const filteredKB = knowledgeBase.filter(group => {
-                if (!searchTerm) return true;
+            const filteredKB = knowledgeBase.map(group => {
+                if (!searchTerm) return group;
                 const normSearch = removeVietnameseTones(searchTerm).toLowerCase();
-                return removeVietnameseTones(group.topic).toLowerCase().includes(normSearch) || 
-                    group.items.some(item => item.normalized.toLowerCase().includes(normSearch));
-            });
+                
+                // Check topic
+                const topicMatches = removeVietnameseTones(group.topic).toLowerCase().includes(normSearch);
+                
+                // Check items (content OR source)
+                const matchingItems = group.items.filter(item => {
+                    const contentMatch = (item.normalized || removeVietnameseTones(item.content)).toLowerCase().includes(normSearch);
+                    const sourceMatch = removeVietnameseTones(item.source || "").toLowerCase().includes(normSearch);
+                    return contentMatch || sourceMatch;
+                });
+
+                if (topicMatches) return group;
+                if (matchingItems.length > 0) return { ...group, items: matchingItems };
+                return null;
+            }).filter(g => g !== null);
 
             return (
                 <div className="flex h-screen bg-gray-100 text-gray-800 font-sans">
